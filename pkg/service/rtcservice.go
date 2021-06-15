@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gorilla/websocket"
+	"github.com/livekit/livekit-server/pkg/rtc/types"
 
 	"github.com/livekit/livekit-server/pkg/config"
 	"github.com/livekit/livekit-server/pkg/logger"
@@ -73,6 +74,10 @@ func (s *RTCService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if pv, err := strconv.Atoi(protocolParam); err == nil {
 		pi.ProtocolVersion = int32(pv)
+		// cannot use a protocol greater than server supports
+		if pi.ProtocolVersion > types.LatestProtocol {
+			pi.ProtocolVersion = types.LatestProtocol
+		}
 	}
 
 	// only use permissions if any of them are set, default permissive

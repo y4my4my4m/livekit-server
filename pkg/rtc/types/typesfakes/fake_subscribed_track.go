@@ -40,6 +40,16 @@ type FakeSubscribedTrack struct {
 	isMutedReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	MIDStub        func() string
+	mIDMutex       sync.RWMutex
+	mIDArgsForCall []struct {
+	}
+	mIDReturns struct {
+		result1 string
+	}
+	mIDReturnsOnCall map[int]struct {
+		result1 string
+	}
 	SetMutedStub        func(bool)
 	setMutedMutex       sync.RWMutex
 	setMutedArgsForCall []struct {
@@ -54,6 +64,16 @@ type FakeSubscribedTrack struct {
 	setVideoQualityMutex       sync.RWMutex
 	setVideoQualityArgsForCall []struct {
 		arg1 livekit.VideoQuality
+	}
+	ToProtoStub        func() *livekit.SubscribedTrack
+	toProtoMutex       sync.RWMutex
+	toProtoArgsForCall []struct {
+	}
+	toProtoReturns struct {
+		result1 *livekit.SubscribedTrack
+	}
+	toProtoReturnsOnCall map[int]struct {
+		result1 *livekit.SubscribedTrack
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
@@ -218,6 +238,59 @@ func (fake *FakeSubscribedTrack) IsMutedReturnsOnCall(i int, result1 bool) {
 	}{result1}
 }
 
+func (fake *FakeSubscribedTrack) MID() string {
+	fake.mIDMutex.Lock()
+	ret, specificReturn := fake.mIDReturnsOnCall[len(fake.mIDArgsForCall)]
+	fake.mIDArgsForCall = append(fake.mIDArgsForCall, struct {
+	}{})
+	stub := fake.MIDStub
+	fakeReturns := fake.mIDReturns
+	fake.recordInvocation("MID", []interface{}{})
+	fake.mIDMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeSubscribedTrack) MIDCallCount() int {
+	fake.mIDMutex.RLock()
+	defer fake.mIDMutex.RUnlock()
+	return len(fake.mIDArgsForCall)
+}
+
+func (fake *FakeSubscribedTrack) MIDCalls(stub func() string) {
+	fake.mIDMutex.Lock()
+	defer fake.mIDMutex.Unlock()
+	fake.MIDStub = stub
+}
+
+func (fake *FakeSubscribedTrack) MIDReturns(result1 string) {
+	fake.mIDMutex.Lock()
+	defer fake.mIDMutex.Unlock()
+	fake.MIDStub = nil
+	fake.mIDReturns = struct {
+		result1 string
+	}{result1}
+}
+
+func (fake *FakeSubscribedTrack) MIDReturnsOnCall(i int, result1 string) {
+	fake.mIDMutex.Lock()
+	defer fake.mIDMutex.Unlock()
+	fake.MIDStub = nil
+	if fake.mIDReturnsOnCall == nil {
+		fake.mIDReturnsOnCall = make(map[int]struct {
+			result1 string
+		})
+	}
+	fake.mIDReturnsOnCall[i] = struct {
+		result1 string
+	}{result1}
+}
+
 func (fake *FakeSubscribedTrack) SetMuted(arg1 bool) {
 	fake.setMutedMutex.Lock()
 	fake.setMutedArgsForCall = append(fake.setMutedArgsForCall, struct {
@@ -314,6 +387,59 @@ func (fake *FakeSubscribedTrack) SetVideoQualityArgsForCall(i int) livekit.Video
 	return argsForCall.arg1
 }
 
+func (fake *FakeSubscribedTrack) ToProto() *livekit.SubscribedTrack {
+	fake.toProtoMutex.Lock()
+	ret, specificReturn := fake.toProtoReturnsOnCall[len(fake.toProtoArgsForCall)]
+	fake.toProtoArgsForCall = append(fake.toProtoArgsForCall, struct {
+	}{})
+	stub := fake.ToProtoStub
+	fakeReturns := fake.toProtoReturns
+	fake.recordInvocation("ToProto", []interface{}{})
+	fake.toProtoMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeSubscribedTrack) ToProtoCallCount() int {
+	fake.toProtoMutex.RLock()
+	defer fake.toProtoMutex.RUnlock()
+	return len(fake.toProtoArgsForCall)
+}
+
+func (fake *FakeSubscribedTrack) ToProtoCalls(stub func() *livekit.SubscribedTrack) {
+	fake.toProtoMutex.Lock()
+	defer fake.toProtoMutex.Unlock()
+	fake.ToProtoStub = stub
+}
+
+func (fake *FakeSubscribedTrack) ToProtoReturns(result1 *livekit.SubscribedTrack) {
+	fake.toProtoMutex.Lock()
+	defer fake.toProtoMutex.Unlock()
+	fake.ToProtoStub = nil
+	fake.toProtoReturns = struct {
+		result1 *livekit.SubscribedTrack
+	}{result1}
+}
+
+func (fake *FakeSubscribedTrack) ToProtoReturnsOnCall(i int, result1 *livekit.SubscribedTrack) {
+	fake.toProtoMutex.Lock()
+	defer fake.toProtoMutex.Unlock()
+	fake.ToProtoStub = nil
+	if fake.toProtoReturnsOnCall == nil {
+		fake.toProtoReturnsOnCall = make(map[int]struct {
+			result1 *livekit.SubscribedTrack
+		})
+	}
+	fake.toProtoReturnsOnCall[i] = struct {
+		result1 *livekit.SubscribedTrack
+	}{result1}
+}
+
 func (fake *FakeSubscribedTrack) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
@@ -323,12 +449,16 @@ func (fake *FakeSubscribedTrack) Invocations() map[string][][]interface{} {
 	defer fake.iDMutex.RUnlock()
 	fake.isMutedMutex.RLock()
 	defer fake.isMutedMutex.RUnlock()
+	fake.mIDMutex.RLock()
+	defer fake.mIDMutex.RUnlock()
 	fake.setMutedMutex.RLock()
 	defer fake.setMutedMutex.RUnlock()
 	fake.setPublisherMutedMutex.RLock()
 	defer fake.setPublisherMutedMutex.RUnlock()
 	fake.setVideoQualityMutex.RLock()
 	defer fake.setVideoQualityMutex.RUnlock()
+	fake.toProtoMutex.RLock()
+	defer fake.toProtoMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

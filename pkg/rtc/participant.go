@@ -7,10 +7,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/bep/debounce"
 	"github.com/pion/ion-sfu/pkg/sfu"
 	"github.com/pion/ion-sfu/pkg/twcc"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
+	"github.com/pion/webrtc/v3/pkg/rtcerr"
 	"github.com/pkg/errors"
 	"google.golang.org/protobuf/proto"
 
@@ -49,6 +51,9 @@ type ParticipantImpl struct {
 	state      atomic.Value // livekit.ParticipantInfo_State
 	rtcpCh     chan []rtcp.Packet
 
+	// debounced function that notifies clients of tracks they are subscribed to
+	deboundedSendSubUpdate func(func())
+
 	// reliable and unreliable data channels
 	reliableDC *webrtc.DataChannel
 	lossyDC    *webrtc.DataChannel
@@ -62,8 +67,8 @@ type ParticipantImpl struct {
 	// hold reference for MediaTrack
 	twcc *twcc.Responder
 
-	// tracks the current participant is subscribed to, map of otherParticipantId => []DownTrack
-	subscribedTracks map[string][]types.SubscribedTrack
+	// tracks the current participant is subscribed to, map of sid => SubscribedTrack
+	subscribedTracks map[string]types.SubscribedTrack
 	// publishedTracks that participant is publishing
 	publishedTracks map[string]types.PublishedTrack
 	// client intended to publish, yet to be reconciled
@@ -85,13 +90,14 @@ func NewParticipant(params ParticipantParams) (*ParticipantImpl, error) {
 	// TODO: check to ensure params are valid, id and identity can't be empty
 
 	p := &ParticipantImpl{
-		params:           params,
-		id:               utils.NewGuid(utils.ParticipantPrefix),
-		rtcpCh:           make(chan []rtcp.Packet, 50),
-		subscribedTracks: make(map[string][]types.SubscribedTrack),
-		publishedTracks:  make(map[string]types.PublishedTrack, 0),
-		pendingTracks:    make(map[string]*livekit.TrackInfo),
-		connectedAt:      time.Now(),
+		params:                 params,
+		id:                     utils.NewGuid(utils.ParticipantPrefix),
+		rtcpCh:                 make(chan []rtcp.Packet, 50),
+		deboundedSendSubUpdate: debounce.New(negotiationFrequency),
+		subscribedTracks:       make(map[string]types.SubscribedTrack),
+		publishedTracks:        make(map[string]types.PublishedTrack, 0),
+		pendingTracks:          make(map[string]*livekit.TrackInfo),
+		connectedAt:            time.Now(),
 	}
 	p.state.Store(livekit.ParticipantInfo_JOINING)
 
@@ -369,10 +375,8 @@ func (p *ParticipantImpl) Close() error {
 	}
 
 	var downtracksToClose []*sfu.DownTrack
-	for _, tracks := range p.subscribedTracks {
-		for _, st := range tracks {
-			downtracksToClose = append(downtracksToClose, st.DownTrack())
-		}
+	for _, st := range p.subscribedTracks {
+		downtracksToClose = append(downtracksToClose, st.DownTrack())
 	}
 	p.lock.Unlock()
 
@@ -463,6 +467,7 @@ func (p *ParticipantImpl) SendJoinResponse(roomInfo *livekit.Room, otherParticip
 				OtherParticipants: ToProtoParticipants(otherParticipants),
 				ServerVersion:     version.Version,
 				IceServers:        iceServers,
+				ProtocolVersion:   uint32(p.ProtocolVersion()),
 			},
 		},
 	})
@@ -571,14 +576,19 @@ func (p *ParticipantImpl) SubscriberPC() *webrtc.PeerConnection {
 	return p.subscriber.pc
 }
 
+func (p *ParticipantImpl) GetTransceiverForSending(track webrtc.TrackLocal, codec webrtc.RTPCodecCapability) *webrtc.RTPTransceiver {
+	if !p.ProtocolVersion().SupportsSubscriptionMap() {
+		return nil
+	}
+	return p.subscriber.GetTransceiverForSending(track, codec)
+}
+
 func (p *ParticipantImpl) GetSubscribedTracks() []types.SubscribedTrack {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	subscribed := make([]types.SubscribedTrack, 0, len(p.subscribedTracks))
-	for _, pTracks := range p.subscribedTracks {
-		for _, t := range pTracks {
-			subscribed = append(subscribed, t)
-		}
+	for _, st := range p.subscribedTracks {
+		subscribed = append(subscribed, st)
 	}
 	return subscribed
 }
@@ -588,23 +598,55 @@ func (p *ParticipantImpl) AddSubscribedTrack(pubId string, subTrack types.Subscr
 	logger.Debugw("added subscribedTrack", "srcParticipant", pubId,
 		"participant", p.Identity(), "track", subTrack.ID())
 	p.lock.Lock()
-	p.subscribedTracks[pubId] = append(p.subscribedTracks[pubId], subTrack)
+	p.subscribedTracks[subTrack.ID()] = subTrack
 	p.lock.Unlock()
+
+	// send a track update
+	if p.ProtocolVersion().SupportsSubscriptionMap() && subTrack.MID() != "" {
+		p.sendSubscriptionUpdate()
+	}
 }
 
 // RemoveSubscribedTrack removes a track to the participant's subscribed list
-func (p *ParticipantImpl) RemoveSubscribedTrack(pubId string, subTrack types.SubscribedTrack) {
+func (p *ParticipantImpl) RemoveSubscribedTrack(pubId string, subTrack types.SubscribedTrack, transceiver *webrtc.RTPTransceiver) {
 	logger.Debugw("removed subscribedTrack", "srcParticipant", pubId,
 		"participant", p.Identity(), "track", subTrack.ID())
+
 	p.lock.Lock()
-	defer p.lock.Unlock()
-	tracks := make([]types.SubscribedTrack, 0, len(p.subscribedTracks[pubId]))
-	for _, tr := range p.subscribedTracks[pubId] {
-		if tr != subTrack {
-			tracks = append(tracks, tr)
-		}
+	delete(p.subscribedTracks, subTrack.ID())
+	p.lock.Unlock()
+
+	// mark transceiver available for recycling
+	sender := transceiver.Sender()
+	if sender == nil {
+		return
 	}
-	p.subscribedTracks[pubId] = tracks
+	if p.ProtocolVersion().SupportsSubscriptionMap() {
+		if err := sender.ReplaceTrack(nil); err != nil {
+			logger.Warnw("could not replace track", err,
+				"sub", p.Identity(),
+				"track", subTrack.ID())
+		}
+		p.sendSubscriptionUpdate()
+	} else {
+		// ignore if the subscribing sub is not connected
+		if p.SubscriberPC().ConnectionState() == webrtc.PeerConnectionStateClosed {
+			return
+		}
+
+		if err := p.SubscriberPC().RemoveTrack(sender); err != nil {
+			if err == webrtc.ErrConnectionClosed {
+				// sub closing, can skip removing subscribedtracks
+				return
+			}
+			if _, ok := err.(*rtcerr.InvalidStateError); !ok {
+				logger.Warnw("could not remove remoteTrack from forwarder", err,
+					"sub", p.Identity(),
+					"track", subTrack.ID())
+			}
+		}
+		p.Negotiate()
+	}
 }
 
 func (p *ParticipantImpl) sendIceCandidate(c *webrtc.ICECandidate, target livekit.SignalTarget) {
@@ -620,6 +662,28 @@ func (p *ParticipantImpl) sendIceCandidate(c *webrtc.ICECandidate, target liveki
 		Message: &livekit.SignalResponse_Trickle{
 			Trickle: trickle,
 		},
+	})
+}
+
+func (p *ParticipantImpl) sendSubscriptionUpdate() {
+	if !p.ProtocolVersion().SupportsSubscriptionMap() {
+		return
+	}
+	p.deboundedSendSubUpdate(func() {
+		update := &livekit.SubscriptionUpdate{}
+		p.lock.RLock()
+		for _, st := range p.subscribedTracks {
+			if st.MID() == "" {
+				continue
+			}
+			update.Tracks = append(update.Tracks, st.ToProto())
+		}
+		p.lock.RUnlock()
+		_ = p.writeMessage(&livekit.SignalResponse{
+			Message: &livekit.SignalResponse_Subscription{
+				Subscription: update,
+			},
+		})
 	})
 }
 
@@ -675,6 +739,11 @@ func (p *ParticipantImpl) onOffer(offer webrtc.SessionDescription) {
 			Offer: ToProtoSessionDescription(offer),
 		},
 	})
+
+	// also send subscription update, since MID is created after the initial offer is created
+	if p.ProtocolVersion().SupportsSubscriptionMap() {
+		p.sendSubscriptionUpdate()
+	}
 }
 
 // when a new remoteTrack is created, creates a Track and adds it to room
@@ -848,16 +917,14 @@ func (p *ParticipantImpl) downTracksRTCPWorker() {
 		var srs []rtcp.Packet
 		var sd []rtcp.SourceDescriptionChunk
 		p.lock.RLock()
-		for _, tracks := range p.subscribedTracks {
-			for _, subTrack := range tracks {
-				sr := subTrack.DownTrack().CreateSenderReport()
-				chunks := subTrack.DownTrack().CreateSourceDescriptionChunks()
-				if sr == nil || chunks == nil {
-					continue
-				}
-				srs = append(srs, sr)
-				sd = append(sd, chunks...)
+		for _, subTrack := range p.subscribedTracks {
+			sr := subTrack.DownTrack().CreateSenderReport()
+			chunks := subTrack.DownTrack().CreateSourceDescriptionChunks()
+			if sr == nil || chunks == nil {
+				continue
 			}
+			srs = append(srs, sr)
+			sd = append(sd, chunks...)
 		}
 		p.lock.RUnlock()
 

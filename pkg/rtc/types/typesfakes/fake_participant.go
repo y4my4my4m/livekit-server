@@ -133,6 +133,18 @@ type FakeParticipant struct {
 	getSubscribedTracksReturnsOnCall map[int]struct {
 		result1 []types.SubscribedTrack
 	}
+	GetTransceiverForSendingStub        func(webrtc.TrackLocal, webrtc.RTPCodecCapability) *webrtc.RTPTransceiver
+	getTransceiverForSendingMutex       sync.RWMutex
+	getTransceiverForSendingArgsForCall []struct {
+		arg1 webrtc.TrackLocal
+		arg2 webrtc.RTPCodecCapability
+	}
+	getTransceiverForSendingReturns struct {
+		result1 *webrtc.RTPTransceiver
+	}
+	getTransceiverForSendingReturnsOnCall map[int]struct {
+		result1 *webrtc.RTPTransceiver
+	}
 	HandleAnswerStub        func(webrtc.SessionDescription) error
 	handleAnswerMutex       sync.RWMutex
 	handleAnswerArgsForCall []struct {
@@ -251,11 +263,12 @@ type FakeParticipant struct {
 	rTCPChanReturnsOnCall map[int]struct {
 		result1 chan []rtcp.Packet
 	}
-	RemoveSubscribedTrackStub        func(string, types.SubscribedTrack)
+	RemoveSubscribedTrackStub        func(string, types.SubscribedTrack, *webrtc.RTPTransceiver)
 	removeSubscribedTrackMutex       sync.RWMutex
 	removeSubscribedTrackArgsForCall []struct {
 		arg1 string
 		arg2 types.SubscribedTrack
+		arg3 *webrtc.RTPTransceiver
 	}
 	RemoveSubscriberStub        func(string)
 	removeSubscriberMutex       sync.RWMutex
@@ -997,6 +1010,68 @@ func (fake *FakeParticipant) GetSubscribedTracksReturnsOnCall(i int, result1 []t
 	}{result1}
 }
 
+func (fake *FakeParticipant) GetTransceiverForSending(arg1 webrtc.TrackLocal, arg2 webrtc.RTPCodecCapability) *webrtc.RTPTransceiver {
+	fake.getTransceiverForSendingMutex.Lock()
+	ret, specificReturn := fake.getTransceiverForSendingReturnsOnCall[len(fake.getTransceiverForSendingArgsForCall)]
+	fake.getTransceiverForSendingArgsForCall = append(fake.getTransceiverForSendingArgsForCall, struct {
+		arg1 webrtc.TrackLocal
+		arg2 webrtc.RTPCodecCapability
+	}{arg1, arg2})
+	stub := fake.GetTransceiverForSendingStub
+	fakeReturns := fake.getTransceiverForSendingReturns
+	fake.recordInvocation("GetTransceiverForSending", []interface{}{arg1, arg2})
+	fake.getTransceiverForSendingMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeParticipant) GetTransceiverForSendingCallCount() int {
+	fake.getTransceiverForSendingMutex.RLock()
+	defer fake.getTransceiverForSendingMutex.RUnlock()
+	return len(fake.getTransceiverForSendingArgsForCall)
+}
+
+func (fake *FakeParticipant) GetTransceiverForSendingCalls(stub func(webrtc.TrackLocal, webrtc.RTPCodecCapability) *webrtc.RTPTransceiver) {
+	fake.getTransceiverForSendingMutex.Lock()
+	defer fake.getTransceiverForSendingMutex.Unlock()
+	fake.GetTransceiverForSendingStub = stub
+}
+
+func (fake *FakeParticipant) GetTransceiverForSendingArgsForCall(i int) (webrtc.TrackLocal, webrtc.RTPCodecCapability) {
+	fake.getTransceiverForSendingMutex.RLock()
+	defer fake.getTransceiverForSendingMutex.RUnlock()
+	argsForCall := fake.getTransceiverForSendingArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeParticipant) GetTransceiverForSendingReturns(result1 *webrtc.RTPTransceiver) {
+	fake.getTransceiverForSendingMutex.Lock()
+	defer fake.getTransceiverForSendingMutex.Unlock()
+	fake.GetTransceiverForSendingStub = nil
+	fake.getTransceiverForSendingReturns = struct {
+		result1 *webrtc.RTPTransceiver
+	}{result1}
+}
+
+func (fake *FakeParticipant) GetTransceiverForSendingReturnsOnCall(i int, result1 *webrtc.RTPTransceiver) {
+	fake.getTransceiverForSendingMutex.Lock()
+	defer fake.getTransceiverForSendingMutex.Unlock()
+	fake.GetTransceiverForSendingStub = nil
+	if fake.getTransceiverForSendingReturnsOnCall == nil {
+		fake.getTransceiverForSendingReturnsOnCall = make(map[int]struct {
+			result1 *webrtc.RTPTransceiver
+		})
+	}
+	fake.getTransceiverForSendingReturnsOnCall[i] = struct {
+		result1 *webrtc.RTPTransceiver
+	}{result1}
+}
+
 func (fake *FakeParticipant) HandleAnswer(arg1 webrtc.SessionDescription) error {
 	fake.handleAnswerMutex.Lock()
 	ret, specificReturn := fake.handleAnswerReturnsOnCall[len(fake.handleAnswerArgsForCall)]
@@ -1656,17 +1731,18 @@ func (fake *FakeParticipant) RTCPChanReturnsOnCall(i int, result1 chan []rtcp.Pa
 	}{result1}
 }
 
-func (fake *FakeParticipant) RemoveSubscribedTrack(arg1 string, arg2 types.SubscribedTrack) {
+func (fake *FakeParticipant) RemoveSubscribedTrack(arg1 string, arg2 types.SubscribedTrack, arg3 *webrtc.RTPTransceiver) {
 	fake.removeSubscribedTrackMutex.Lock()
 	fake.removeSubscribedTrackArgsForCall = append(fake.removeSubscribedTrackArgsForCall, struct {
 		arg1 string
 		arg2 types.SubscribedTrack
-	}{arg1, arg2})
+		arg3 *webrtc.RTPTransceiver
+	}{arg1, arg2, arg3})
 	stub := fake.RemoveSubscribedTrackStub
-	fake.recordInvocation("RemoveSubscribedTrack", []interface{}{arg1, arg2})
+	fake.recordInvocation("RemoveSubscribedTrack", []interface{}{arg1, arg2, arg3})
 	fake.removeSubscribedTrackMutex.Unlock()
 	if stub != nil {
-		fake.RemoveSubscribedTrackStub(arg1, arg2)
+		fake.RemoveSubscribedTrackStub(arg1, arg2, arg3)
 	}
 }
 
@@ -1676,17 +1752,17 @@ func (fake *FakeParticipant) RemoveSubscribedTrackCallCount() int {
 	return len(fake.removeSubscribedTrackArgsForCall)
 }
 
-func (fake *FakeParticipant) RemoveSubscribedTrackCalls(stub func(string, types.SubscribedTrack)) {
+func (fake *FakeParticipant) RemoveSubscribedTrackCalls(stub func(string, types.SubscribedTrack, *webrtc.RTPTransceiver)) {
 	fake.removeSubscribedTrackMutex.Lock()
 	defer fake.removeSubscribedTrackMutex.Unlock()
 	fake.RemoveSubscribedTrackStub = stub
 }
 
-func (fake *FakeParticipant) RemoveSubscribedTrackArgsForCall(i int) (string, types.SubscribedTrack) {
+func (fake *FakeParticipant) RemoveSubscribedTrackArgsForCall(i int) (string, types.SubscribedTrack, *webrtc.RTPTransceiver) {
 	fake.removeSubscribedTrackMutex.RLock()
 	defer fake.removeSubscribedTrackMutex.RUnlock()
 	argsForCall := fake.removeSubscribedTrackArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
 }
 
 func (fake *FakeParticipant) RemoveSubscriber(arg1 string) {
@@ -2379,6 +2455,8 @@ func (fake *FakeParticipant) Invocations() map[string][][]interface{} {
 	defer fake.getResponseSinkMutex.RUnlock()
 	fake.getSubscribedTracksMutex.RLock()
 	defer fake.getSubscribedTracksMutex.RUnlock()
+	fake.getTransceiverForSendingMutex.RLock()
+	defer fake.getTransceiverForSendingMutex.RUnlock()
 	fake.handleAnswerMutex.RLock()
 	defer fake.handleAnswerMutex.RUnlock()
 	fake.handleOfferMutex.RLock()

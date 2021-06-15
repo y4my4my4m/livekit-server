@@ -30,7 +30,9 @@ type PCTransport struct {
 	pc *webrtc.PeerConnection
 	me *webrtc.MediaEngine
 
-	lock                  sync.Mutex
+	lock sync.Mutex
+	// map of mid => []codecs for the transceiver
+	transceiverCodecs     map[string][]webrtc.RTPCodecCapability
 	pendingCandidates     []webrtc.ICECandidateInit
 	debouncedNegotiate    func(func())
 	onOffer               func(offer webrtc.SessionDescription)
@@ -88,6 +90,7 @@ func NewPCTransport(params TransportParams) (*PCTransport, error) {
 	t := &PCTransport{
 		pc:                 pc,
 		me:                 me,
+		transceiverCodecs:  make(map[string][]webrtc.RTPCodecCapability),
 		debouncedNegotiate: debounce.New(negotiationFrequency),
 		negotiationState:   negotiationStateNone,
 	}
@@ -124,6 +127,36 @@ func (t *PCTransport) PeerConnection() *webrtc.PeerConnection {
 
 func (t *PCTransport) Close() {
 	_ = t.pc.Close()
+}
+
+func (t *PCTransport) GetTransceiverForSending(track webrtc.TrackLocal, codec webrtc.RTPCodecCapability) *webrtc.RTPTransceiver {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	for _, transceiver := range t.pc.GetTransceivers() {
+		if transceiver.Kind() != track.Kind() {
+			continue
+		}
+		sender := transceiver.Sender()
+		if sender == nil || sender.Track() != nil {
+			continue
+		}
+
+		// only use if there's matching codec
+		codecMatches := false
+		for _, params := range t.transceiverCodecs[transceiver.Mid()] {
+			if params.MimeType == codec.MimeType {
+				codecMatches = true
+				break
+			}
+		}
+
+		if codecMatches {
+			transceiver.Mid()
+			return transceiver
+		}
+	}
+
+	return nil
 }
 
 func (t *PCTransport) SetRemoteDescription(sd webrtc.SessionDescription) error {
@@ -228,6 +261,19 @@ func (t *PCTransport) createAndSendOffer(options *webrtc.OfferOptions) error {
 	// indicate waiting for client
 	t.negotiationState = negotiationStateClient
 	t.restartAfterGathering = false
+
+	// record any transceiver and their codec types
+	for _, transceiver := range t.pc.GetTransceivers() {
+		sender := transceiver.Sender()
+		if sender == nil || sender.Track() == nil {
+			continue
+		}
+		var capabilities []webrtc.RTPCodecCapability
+		for _, codec := range sender.GetParameters().Codecs {
+			capabilities = append(capabilities, codec.RTPCodecCapability)
+		}
+		t.transceiverCodecs[transceiver.Mid()] = capabilities
+	}
 
 	go t.onOffer(offer)
 	return nil

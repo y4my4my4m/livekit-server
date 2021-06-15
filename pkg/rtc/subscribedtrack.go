@@ -9,19 +9,27 @@ import (
 )
 
 type SubscribedTrack struct {
-	dt       *sfu.DownTrack
-	subMuted utils.AtomicFlag
-	pubMuted utils.AtomicFlag
+	sourceSid   string
+	dt          *sfu.DownTrack
+	transceiver *webrtc.RTPTransceiver
+	subMuted    utils.AtomicFlag
+	pubMuted    utils.AtomicFlag
 }
 
-func NewSubscribedTrack(dt *sfu.DownTrack) *SubscribedTrack {
+func NewSubscribedTrack(sourceSid string, dt *sfu.DownTrack, transceiver *webrtc.RTPTransceiver) *SubscribedTrack {
 	return &SubscribedTrack{
-		dt: dt,
+		sourceSid:   sourceSid,
+		dt:          dt,
+		transceiver: transceiver,
 	}
 }
 
 func (t *SubscribedTrack) ID() string {
 	return t.dt.ID()
+}
+
+func (t *SubscribedTrack) MID() string {
+	return t.transceiver.Mid()
 }
 
 func (t *SubscribedTrack) DownTrack() *sfu.DownTrack {
@@ -47,6 +55,14 @@ func (t *SubscribedTrack) SetPublisherMuted(muted bool) {
 func (t *SubscribedTrack) SetVideoQuality(quality livekit.VideoQuality) {
 	if t.dt.Kind() == webrtc.RTPCodecTypeVideo {
 		t.dt.SwitchSpatialLayer(int64(quality), true)
+	}
+}
+
+func (t *SubscribedTrack) ToProto() *livekit.SubscribedTrack {
+	return &livekit.SubscribedTrack{
+		Mid:            t.MID(),
+		TrackSid:       t.dt.ID(),
+		ParticipantSid: t.sourceSid,
 	}
 }
 

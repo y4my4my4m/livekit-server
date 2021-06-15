@@ -34,7 +34,6 @@ type Participant interface {
 	SetPermission(permission *livekit.ParticipantPermission)
 	GetResponseSink() routing.MessageSink
 	SetResponseSink(sink routing.MessageSink)
-	SubscriberMediaEngine() *webrtc.MediaEngine
 	Negotiate()
 	ICERestart() error
 
@@ -75,8 +74,10 @@ type Participant interface {
 	// package methods
 
 	AddSubscribedTrack(participantId string, st SubscribedTrack)
-	RemoveSubscribedTrack(participantId string, st SubscribedTrack)
+	RemoveSubscribedTrack(participantId string, st SubscribedTrack, transceiver *webrtc.RTPTransceiver)
 	SubscriberPC() *webrtc.PeerConnection
+	SubscriberMediaEngine() *webrtc.MediaEngine
+	GetTransceiverForSending(track webrtc.TrackLocal, codec webrtc.RTPCodecCapability) *webrtc.RTPTransceiver
 }
 
 // PublishedTrack is the main interface representing a track published to the room
@@ -101,11 +102,13 @@ type PublishedTrack interface {
 //counterfeiter:generate . SubscribedTrack
 type SubscribedTrack interface {
 	ID() string
+	MID() string
 	DownTrack() *sfu.DownTrack
 	IsMuted() bool
 	SetMuted(muted bool)
 	SetVideoQuality(quality livekit.VideoQuality)
 	SetPublisherMuted(muted bool)
+	ToProto() *livekit.SubscribedTrack
 }
 
 // interface for properties of webrtc.TrackRemote
